@@ -47,7 +47,7 @@ Requires Go 1.26+ (no external modules, works offline).
 go build -o bin/payload-obfuscate ./cmd/payload-obfuscate
 ```
 
-Or with [just](https://github.com/casey/just):
+Or with `just`:
 
 ```sh
 just build
