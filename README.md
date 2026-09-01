@@ -1,61 +1,61 @@
 # Payload Obfuscation Engine
 
-A defensive, educational payload obfuscation engine written in Go. It implements
-six reversible obfuscation techniques as a composable library, chains them into
-configurable pipelines, and ships a CLI to obfuscate and deobfuscate payloads.
+A defensive, educational payload obfuscation engine written in Go. It implements six reversible obfuscation techniques as a composable library, chains them into configurable pipelines, and ships a CLI to obfuscate and deobfuscate payloads.
 
-> **Intended use only for education and defense.** This tool exists to teach
-> how signature-based detection works and how static evasion techniques are
-> defeated — the same concepts that drive behavioral analysis in modern
-> antivirus. Only apply it to your own samples (e.g., malware you are analyzing
-> in a lab, red-team exercises on infrastructure you own or are authorized to
-> test). Never use it to evade security controls on systems you do not own or
-> are not explicitly authorized to test.
+## Overview
 
-## Features
+The Payload Obfuscation Engine is an educational tool designed to demonstrate how payload obfuscation works and how signature-based detection mechanisms can be evaded or bypassed. This knowledge is fundamental to understanding both offensive techniques and defensive countermeasures in modern cybersecurity. The engine is intentionally built with simple, reversible techniques to facilitate learning and analysis.
 
-- **Six reversible obfuscation techniques** (all `Obfuscate`/`Deobfuscate`
-  round-trips are exact):
-  - `xor` — XOR with a random key, prepended to the output (different output
-    on every run)
-  - `base64` — base64 with a custom 64-character alphabet (no standard `+/`)
-  - `split` — chunk-and-shuffle with an embedded permutation header
-  - `hex` — `\xNN` escape sequences
-  - `uuid` — RFC-4122-lookalike UUID strings, one per 16-byte block
-  - `url` — percent-encoding of every byte
-- **Pipeline builder** — chain stages in any order; `Deobfuscate` reverses the
-  exact inverse order.
-- **CLI** with `list`, `analyze`, `obfuscate`, and `deobfuscate` commands,
-  file/stdin/stdout I/O, and a `--rounds` flag to apply the pipeline multiple
-  times.
-- **Entropy analysis** — Shannon entropy (bits/byte) for payload reports.
-- **Pure Go standard library** — zero external dependencies, fully offline.
+**Important:** This tool is intended solely for educational purposes and authorized security research. It should only be used on payloads you create, samples from sanctioned malware-analysis labs, or infrastructure you own or have explicit authorization to test.
 
-## Project layout
+## Techniques
 
-```
-cmd/payload-obfuscate/   CLI entry point
-internal/engine/         Technique interface, registry, six techniques, entropy
-internal/cli/            argument parsing and command execution
-```
+The engine provides six reversible obfuscation techniques, all of which support exact round-trip deobfuscation:
 
-## Install / build
+| Technique | Output Shape | Randomness |
+|-----------|--------------|------------|
+| `xor` | `[keylen][key][cipher]` binary | Fresh key every run |
+| `base64` | ASCII with custom alphabet | Deterministic |
+| `split` | `[size][count][perm][chunks]` binary | Fresh permutation every run |
+| `hex` | `\xHH` ASCII escapes | Deterministic |
+| `uuid` | `[len][uuid...\n]` ASCII | Deterministic |
+| `url` | `%HH` ASCII escapes | Deterministic |
 
-Requires Go 1.26+ (no external modules, works offline).
+Each technique is designed to be simple enough to understand fundamentally while demonstrating core concepts in payload transformation.
 
-```sh
-go build -o bin/payload-obfuscate ./cmd/payload-obfuscate
-```
+## Pipeline Builder
 
-Or with `just`:
+The engine features a composable pipeline system where techniques can be chained in any order:
 
-```sh
-just build
-```
+- **Pipeline construction**: Select any combination of the six techniques in a desired sequence
+- **Inverse operations**: `Deobfuscate` reverses the exact inverse order of the obfuscation pipeline
+- **Round repetition**: Apply the entire pipeline multiple times using the `-r` or `--rounds` flag
+- **Preset pipeline**: Default pipeline when no stages are specified: `xor,base64,hex`
 
-## Usage
+## CLI Interface
 
-```sh
+The command-line tool provides comprehensive functionality:
+
+### Available Commands
+
+| Command | Description |
+|---------|-------------|
+| `list` | Display all available obfuscation techniques |
+| `analyze` | Perform entropy and size analysis on a payload |
+| `obfuscate` | Apply a pipeline of obfuscation techniques to a payload |
+| `deobfuscate` | Reverse a previously applied obfuscation pipeline |
+
+### CLI Options
+
+- `-i, --input`: Input file path (defaults to stdin)
+- `-o, --output`: Output file path (defaults to stdout)
+- `-s, --stages`: Comma-separated list of obfuscation techniques to apply
+- `-r, --rounds`: Number of times to apply the full pipeline (default: 1)
+- `--help`: Display help information
+
+### Example Usages
+
+```bash
 # List available techniques
 payload-obfuscate list
 
@@ -68,52 +68,97 @@ payload-obfuscate deobfuscate -i payload.enc -o payload.bin -s xor,base64,uuid,u
 # Apply the whole pipeline 3 times
 payload-obfuscate obfuscate -i payload.bin -s xor,base64 -r 3
 
-# Pipe mode
+# Pipe mode - obfuscate then deobfuscate in sequence
 cat payload.bin | payload-obfuscate obfuscate -s xor,hex | payload-obfuscate deobfuscate -s hex,xor
 
 # Analyze entropy and size
 payload-obfuscate analyze -i payload.bin
 ```
 
-Default pipeline when `-s` is omitted: `xor,base64,hex`.
-
-## Library usage
+## Library Usage
 
 ```go
+import "github.com/OpKnock/payload-obfuscation-engine/engine"
+
 builder, _ := engine.NewBuilder([]string{"xor", "base64", "uuid"})
 obfuscated, _ := builder.Build(payload)
 original, _ := builder.Deobfuscate(obfuscated)
 ```
 
-## Testing
+The library provides a `Builder` type that handles technique registration, pipeline construction, and round-trip obfuscation/deobfuscation.
 
-```sh
-go test ./...
+## Installation and Building
+
+### Requirements
+
+- Go 1.26+ (no external modules required, works fully offline)
+
+### Build from Source
+
+```bash
+go build -o bin/payload-obfuscate ./cmd/payload-obfuscate
 ```
 
-Coverage: round-trip (obfuscate → deobfuscate == original) for every technique
-across many input sizes, pipeline round-trips for **every permutation** of all
-six stages, multi-round pipelines, entropy math, malformed-input rejection, and
-CLI behavior including a built-binary end-to-end test.
+### Just Build Shortcut
 
-## Techniques at a glance
+```bash
+just build
+```
 
-| Name | Output shape | Randomness |
-|------|--------------|------------|
-| `xor` | `[keylen][key][cipher]` binary | fresh key every run |
-| `base64` | ASCII with custom alphabet | deterministic |
-| `split` | `[size][count][perm][chunks]` binary | fresh permutation every run |
-| `hex` | `\xHH` ASCII escapes | deterministic |
-| `uuid` | `[len][uuid...\n]` ASCII | deterministic |
-| `url` | `%HH` ASCII escapes | deterministic |
+### Pre-built Binary
 
-## Legal and ethical notes
+Binary releases are available in the GitHub Releases section for immediate use without building.
 
-- Obfuscation is a **dual-use** technique: it is the same method used by
-  malware and by defensive researchers (evasion testing, detection
-  engineering, malware analysis).
-- Use this engine only on payloads you created, samples from sanctioned
-  malware-analysis labs, or infrastructure you are authorized to test.
-- The techniques here are trivial to reverse on purpose — the educational
-  value is in understanding *why* signature-based detection fails and how
-  behavioral detection takes over.
+## Entropy Analysis
+
+The engine includes Shannon entropy calculation (bits/byte) to help analyze payload complexity and detect potential obfuscation effects. The `analyze` command provides:
+
+- Shannon entropy value per byte
+- File size before and after obfuscation
+- Comparison of entropy before/after each technique
+- Recommendations for further analysis
+
+## Testing
+
+The project includes comprehensive test coverage:
+
+- Round-trip verification (obfuscate → deobfuscate == original) for every technique
+- Pipeline round-trips for every permutation of all six stages
+- Multi-round pipeline testing
+- Entropy math validation
+- Malformed-input rejection testing
+- CLI behavior testing including built-binary end-to-end tests
+
+Run all tests with: `go test ./...`
+
+Coverage reports are generated in the `coverage/` directory.
+
+## Legal and Ethical Notes
+
+### Dual-Use Disclaimer
+
+Payload obfuscation is a dual-use technique with legitimate applications in both offensive and defensive cybersecurity:
+
+- **Offensive use**: Malware authors use obfuscation to evade signature-based detection
+- **Defensive use**: Security researchers use obfuscation understanding to improve behavioral detection, design better signatures, and analyze threat samples
+
+### Authorized Use Only
+
+This engine must only be used:
+
+- On payloads you personally created for testing purposes
+- On samples from sanctioned malware-analysis laboratories
+- On infrastructure you own or have explicit written authorization to test
+- In educational settings with proper oversight
+
+### Prohibited Use
+
+- Never use against security controls on systems you do not own
+- Never use for evading controls on production systems without permission
+- Never distribute obfuscated payloads for malicious purposes
+
+The educational value of understanding these techniques is significant for improving overall security posture, but this must always be balanced with legal and ethical responsibilities.
+
+## License
+
+MIT License - See the LICENSE file for full terms and conditions. This project is provided "as is" without warranty of any kind, either express or implied, including but not limited to the warranties of merchantability, fitness for a particular purpose, or non-infringement.
